@@ -43,9 +43,13 @@ public:
      *
      * @param node Node to render offscreen.
      * @param constrain If true, rendering is constrained to node bounds.
+     * @param depth If non-zero, creates a 3D texture with this depth.
+     *              Children of `node` are rendered with increasing depths into the texture,
+     *              (i.e. node 0 is on 3d slice index 0, node 1 is on 3d slice index 1 and so on).
+     *              The OpenGL standard ensures all implementations support at least 256 layers.
      * @return Newly created RenderNode instance.
      */
-    static RenderNode* create(cocos2d::CCNode* node, bool constrain = false);
+    static RenderNode* create(cocos2d::CCNode* node, bool constrain = false, int depth = 0);
 
     /**
      * @brief Initializes the RenderNode.
@@ -54,7 +58,7 @@ public:
      * @param constrain If true, rendering is constrained to node bounds.
      * @return True if initialization succeeds; false otherwise.
      */
-    bool init(cocos2d::CCNode* node, bool constrain);
+    bool init(cocos2d::CCNode* node, bool constrain, int depth);
 
     /**
      * @brief Initializes the framebuffer object (FBO) for rendering.
@@ -65,6 +69,11 @@ public:
      * @brief Renders the wrapped node to the framebuffer.
      */
     void render();
+
+    /**
+     * @brief Renders the children of the wrapped node into layers of the current texture.
+     */
+    void render3D();
 
     /**
      * @brief Called when the node enters the scene.
@@ -131,7 +140,7 @@ public:
 protected:
     /// Internal implementation details.
     struct Impl;
-    std::unique_ptr<Impl> m_impl; 
+    std::unique_ptr<Impl> m_impl;
 };
 
 }

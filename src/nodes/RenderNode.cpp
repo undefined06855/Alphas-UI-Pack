@@ -67,6 +67,7 @@ struct RenderNode::Impl final {
     GLuint m_texture = 0;
     int m_texWidth = 0;
     int m_texHeight = 0;
+    int m_texDepth = 0;
     bool m_constain = false;
 };
 
@@ -77,9 +78,9 @@ RenderNode::~RenderNode() {
     if (m_impl->m_texture) glDeleteTextures(1, &m_impl->m_texture);
 }
 
-RenderNode* RenderNode::create(CCNode* node, bool constrain) {
+RenderNode* RenderNode::create(CCNode* node, bool constrain, int depth) {
     auto ret = new RenderNode();
-    if (ret->init(node, constrain)) {
+    if (ret->init(node, constrain, depth)) {
         ret->autorelease();
         return ret;
     }
@@ -87,7 +88,7 @@ RenderNode* RenderNode::create(CCNode* node, bool constrain) {
     return nullptr;
 }
 
-bool RenderNode::init(CCNode* node, bool constrain) {
+bool RenderNode::init(CCNode* node, bool constrain, int depth) {
     if (!node) return false;
 
     CCSprite::init();
@@ -95,6 +96,8 @@ bool RenderNode::init(CCNode* node, bool constrain) {
     m_impl->m_children = CCArray::create();
 
     m_impl->m_constain = constrain;
+
+    m_impl->m_texDepth = depth;
 
     if (constrain) {
         setPosition(node->getPosition());
@@ -122,7 +125,7 @@ bool RenderNode::init(CCNode* node, bool constrain) {
 
     m_impl->m_nodeToRender = node;
 
-    if (!node->getParent()) node->m_pParent = this; 
+    if (!node->getParent()) node->m_pParent = this;
 
     m_impl->m_children->addObject(m_impl->m_nodeToRender);
 
@@ -148,21 +151,39 @@ void RenderNode::initFBO() {
     }
 
     glGenTextures(1, &m_impl->m_texture);
-    glBindTexture(GL_TEXTURE_2D, m_impl->m_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_impl->m_texWidth, m_impl->m_texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    if (m_impl->m_texDepth != 0) {
+        glBindTexture(GL_TEXTURE_3D, m_impl->m_texture);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA, m_impl->m_texWidth, m_impl->m_texHeight, m_impl->m_texDepth, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, m_impl->m_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_impl->m_texWidth, m_impl->m_texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+
 
     GLint prevFbo = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
 
     glGenFramebuffers(1, &m_impl->m_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, m_impl->m_fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_impl->m_texture, 0);
+    if (m_impl->m_texDepth != 0) {
+        // only layer 0 gets bound to the texture for now, but RenderNode::render3D will call this for every layer needed
+        glFramebufferTexture3D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_3D, m_impl->m_texture, 0, 0);
+    } else {
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_impl->m_texture, 0);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
 
     auto texObj = CCTexture2DExt::create(m_impl->m_texture, m_impl->m_texWidth, m_impl->m_texHeight, CCSize(m_impl->m_texWidth / scale, m_impl->m_texHeight / scale));
@@ -236,6 +257,37 @@ void RenderNode::render() {
     if (parent) m_impl->m_nodeToRender->m_pParent = parent;
 }
 
+void RenderNode::render3D() {
+    if (m_impl->m_texDepth == 0) return;
+
+    if (!m_impl->m_fbo) initFBO();
+
+    std::vector<bool> origVisibilities;
+    origVisibilities.reserve(m_impl->m_nodeToRender->getChildrenCount());
+    for (auto child : CCArrayExt<CCNode>(m_impl->m_nodeToRender->getChildren())) {
+        origVisibilities.push_back(child->isVisible());
+    }
+
+    // hide every other child except the one we want to be rendering to this layer right now
+    for (int i = 0; i < m_impl->m_texDepth; i++) {
+        GLint oldFBO;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &oldFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, m_impl->m_fbo);
+        glFramebufferTexture3D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_3D, m_impl->m_texture, 0, i);
+        glBindFramebuffer(GL_FRAMEBUFFER, oldFBO);
+
+        for (int j = 0; j < m_impl->m_nodeToRender->getChildrenCount(); j++) {
+            m_impl->m_nodeToRender->getChildByIndex(j)->setVisible(j == i);
+        }
+
+        render();
+    }
+
+    for (int i = 0; i < m_impl->m_nodeToRender->getChildrenCount(); i++) {
+        m_impl->m_nodeToRender->getChildByIndex(i)->setVisible(origVisibilities[i]);
+    }
+}
+
 void RenderNode::onEnter() {
     CCSprite::onEnter();
     m_impl->m_nodeToRender->onEnter();
@@ -248,7 +300,11 @@ void RenderNode::onExit() {
 }
 
 void RenderNode::update(float dt) {
-    render();
+    if (m_impl->m_texDepth != 0) {
+        render3D();
+    } else {
+        render();
+    }
 }
 
 void RenderNode::addChild(cocos2d::CCNode* child, int zOrder, int tag) {
