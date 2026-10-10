@@ -48,13 +48,26 @@ public:
     static RenderNode* create(cocos2d::CCNode* node, bool constrain = false);
 
     /**
+    * @brief Creates a RenderNode that wraps the specified node, with a specified resolution.
+    *
+    * @param node Node to render offscreen.
+    * @param constrain If true, rendering is constrained to node bounds.
+    * @param texWidth The width of the texture, or zero to automatically calculate from the node's size.
+    * @param texHeight The width of the texture, or zero to automatically calculate from the node's size.
+    * @return Newly created RenderNode instance.
+    */
+    static RenderNode* createWithResolution(cocos2d::CCNode* node, bool constrain = false, int texWidth = 0, int texHeight = 0);
+
+    /**
      * @brief Initializes the RenderNode.
      *
      * @param node Node to render offscreen.
      * @param constrain If true, rendering is constrained to node bounds.
+     * @param texWidth The width of the texture, or zero to automatically calculate from node size.
+     * @param texheight The height of the texture, or zero to automatically calculate from node size.
      * @return True if initialization succeeds; false otherwise.
      */
-    bool init(cocos2d::CCNode* node, bool constrain);
+    bool init(cocos2d::CCNode* node, bool constrain, int texWidth, int texHeight);
 
     /**
      * @brief Initializes the framebuffer object (FBO) for rendering.
@@ -131,7 +144,7 @@ public:
 protected:
     /// Internal implementation details.
     struct Impl;
-    std::unique_ptr<Impl> m_impl; 
+    std::unique_ptr<Impl> m_impl;
 };
 
 }

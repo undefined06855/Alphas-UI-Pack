@@ -78,8 +78,12 @@ RenderNode::~RenderNode() {
 }
 
 RenderNode* RenderNode::create(CCNode* node, bool constrain) {
+    return RenderNode::createWithResolution(node, constrain);
+}
+
+RenderNode* RenderNode::createWithResolution(CCNode* node, bool constrain, int texWidth, int texHeight) {
     auto ret = new RenderNode();
-    if (ret->init(node, constrain)) {
+    if (ret->init(node, constrain, texWidth, texHeight)) {
         ret->autorelease();
         return ret;
     }
@@ -87,7 +91,7 @@ RenderNode* RenderNode::create(CCNode* node, bool constrain) {
     return nullptr;
 }
 
-bool RenderNode::init(CCNode* node, bool constrain) {
+bool RenderNode::init(CCNode* node, bool constrain, int texWidth, int texHeight) {
     if (!node) return false;
 
     CCSprite::init();
@@ -95,6 +99,8 @@ bool RenderNode::init(CCNode* node, bool constrain) {
     m_impl->m_children = CCArray::create();
 
     m_impl->m_constain = constrain;
+    m_impl->m_texWidth = texWidth;
+    m_impl->m_texHeight = texHeight;
 
     if (constrain) {
         setPosition(node->getPosition());
@@ -122,7 +128,7 @@ bool RenderNode::init(CCNode* node, bool constrain) {
 
     m_impl->m_nodeToRender = node;
 
-    if (!node->getParent()) node->m_pParent = this; 
+    if (!node->getParent()) node->m_pParent = this;
 
     m_impl->m_children->addObject(m_impl->m_nodeToRender);
 
@@ -139,12 +145,20 @@ void RenderNode::initFBO() {
 
     auto scale = CCDirector::get()->getContentScaleFactor();
 
-    if (m_impl->m_constain) {
-        m_impl->m_texWidth = m_impl->m_nodeToRender->getContentSize().width * scale;
-        m_impl->m_texHeight = m_impl->m_nodeToRender->getContentSize().height * scale;
-    } else {
-        m_impl->m_texWidth = winSize.width * scale;
-        m_impl->m_texHeight = winSize.height * scale;
+    if (m_impl->m_texWidth != 0) {
+        if (m_impl->m_constain) {
+            m_impl->m_texWidth = m_impl->m_nodeToRender->getContentSize().width * scale;
+        } else {
+            m_impl->m_texWidth = winSize.width * scale;
+        }
+    }
+
+    if (m_impl->m_texHeight != 0) {
+        if (m_impl->m_constain) {
+            m_impl->m_texHeight = m_impl->m_nodeToRender->getContentSize().height * scale;
+        } else {
+            m_impl->m_texHeight = winSize.height * scale;
+        }
     }
 
     glGenTextures(1, &m_impl->m_texture);
